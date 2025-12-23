@@ -193,17 +193,15 @@ docker compose run --rm hydrapool-cli gen-auth <USERNAME> <PASSWORD>
 The above will generate config lines for pasting into your
 config.toml.
 
-Once the password is changed, you need to share that with your
-prometheus setup. The same credentials will also be used to access the
-API Server.
+Once the auth_user and auth_token have been updated in the config.toml file, you need to update the username and password in both the prometheus.yml file and the docker-compose.yml file so that those credentials match the username and password you passed to the gen-auth function.
 
 To update prometheus with your new credentials:
 
-1. Copy the prometheus configuration template:
+1. Copy the prometheus configuration template from GitHub to your local working folder:
 ```bash
-cp prometheus/prometheus.yml docker/prometheus.yml
+cp prometheus/prometheus.yml hydrapool/prometheus.yml
 ```
-2. Edit `docker/prometheus.yml` and change the username and password to match what was output by hydrapool_cli above:
+2. Edit `hydrapool/prometheus.yml` and change the username and password to match what was passed to the gen-auth function above:
 ```yaml
     basic_auth:
       username: '<USERNAME>'
@@ -213,8 +211,20 @@ cp prometheus/prometheus.yml docker/prometheus.yml
 ```bash
 docker compose restart prometheus
 ```
+4. Edit the docker-compose.yml file credentials:
+```bash
+nano docker-compose.yml
+```
+```yaml
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "--http-user=USERNAME", "--http-password=PASSWORD", "--auth-no-challenge", "http://localhost:46884/health"]
+```
+5. Restart the Docker service:
+```bash
+sudo docker compose up -d
+```
 
-Note: By default, prometheus uses the built-in configuration with credentials `hydrapool/hydrapool`. Creating a custom `docker/prometheus.yml` file overrides this default configuration.
+Note: By default, prometheus uses the built-in configuration with credentials `hydrapool/hydrapool`. Creating a custom `hydrapool/prometheus.yml` file overrides this default configuration.
 
 <a id="api"></a>
 # API Server
