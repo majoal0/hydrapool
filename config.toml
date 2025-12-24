@@ -10,7 +10,7 @@ start_difficulty = 1
 minimum_difficulty = 1
 # The bitcoin address to use for first jobs when there are no
 # shares. The default provided is the 256 Foundation address.
-bootstrap_address = "tb1qyazxde6558qj6z3d9np5e6msmrspwpf6k0qggk"
+bootstrap_address = "bc1qce93hy5rhg02s6aeu7mfdvxg76x66pqqtrvzs3"
 # Any donation amount for developers to be sent to donation address. Default no donation.
 # donation_address = "<your donation address here>"
 # In basis points, 1% = 100 basis points. Default 0
