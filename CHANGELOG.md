@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-12-24
+
+### Added
+
+- Show coinbase distribution in grafana dashboard
+- Upgrade to p2poolv2 hydrapool.v0.4.0
+
+### Changed
+
+- BREAKING: Use bitcoin compatible serialisation of shares in
+  database. This requires that you nuke your existing store.db
+  directory and start the server from no data. We want to make this
+  change early before any servers are using Hydrapool at scale. We are
+  not shipping a script to migrate existing data - if you really need
+  it, please reach out to us and we'll try to make it work for
+  you. Ideally, a PR will be welcome too with a script to migrate the
+  rocksdb data.
+- Update README with auth instructions on securing the server
+- Use 256Foundation's address as default mainnet config
+
+
 ## [1.1.18] - 2025-10-31
 
 ### Fixed
