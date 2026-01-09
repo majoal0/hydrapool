@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-01-12
+
+### Changed
+
+- Detect duplicate shares submitted by clients and reject them
+- Add support for load testing by ignoring difficulty in test configs
+- Bump p2pool lib to v0.4.1
+
 ## [2.0.1] - 2025-12-24
 
 ### Changed
