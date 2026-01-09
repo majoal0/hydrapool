@@ -23,16 +23,25 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.prometheus
     image: hydrapool-prometheus:dev
+    ports:
+      - "9090:9090"
     networks:
       - p2pool_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 
   grafana:
     build:
       context: ..
       dockerfile: docker/Dockerfile.grafana
     image: hydrapool-grafana:dev
+    ports:
+      - "3000:3000"
     networks:
       - p2pool_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   p2pool_network:
