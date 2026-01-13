@@ -62,7 +62,20 @@ async fn main() -> Result<(), String> {
         error!("Failed to load config: {err}");
         return Err(format!("Failed to load config: {err}"));
     }
-    let config = config.unwrap();
+
+    let mut config = config.unwrap();
+    // Signature standard: [ 0x54 0x41 0x47 ][ 0x01 ][ len(signature) ][ signature ]
+    if let Some(ref original_sig) = config.stratum.pool_signature {
+        let original_bytes = original_sig.as_bytes();
+        let sig_len = original_bytes.len();
+        if sig_len > 0 {
+            let mut new_signature = vec![0x54, 0x41, 0x47, 0x01, sig_len as u8];
+            new_signature.extend_from_slice(original_bytes);
+            // Convert bytes to String (using from_utf8_lossy to handle any non-UTF8 bytes)
+            config.stratum.pool_signature = Some(String::from_utf8_lossy(&new_signature).to_string());
+        }
+    }
+
     // Configure logging based on config
     let logging_result = setup_logging(&config.logging);
     // hold guard to ensure logging is set up correctly
