@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.7] - 2026-01-16
+
+### Fixed
+
+- Stop saving chain and pplns shares for now
+- Bump p2poolv2 libs to v0.4.7
+
+
 ## [2.1.6] - 2026-01-15
 
 ### Fixed
