@@ -11,5 +11,6 @@ ENTRYPOINT ["/usr/local/bin/prometheus-entrypoint.sh"]
 
 # Default command arguments (can be overridden in docker-compose)
 CMD ["--storage.tsdb.path=/prometheus", \
+    "--web.enable-admin-api", \
      "--web.console.libraries=/usr/share/prometheus/console_libraries", \
      "--web.console.templates=/usr/share/prometheus/consoles"]
