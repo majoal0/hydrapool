@@ -30,9 +30,11 @@ use p2poolv2_lib::stratum::work::gbt::start_gbt;
 use p2poolv2_lib::stratum::work::notify::start_notify;
 use p2poolv2_lib::stratum::work::tracker::start_tracker_actor;
 use p2poolv2_lib::stratum::zmq_listener::{ZmqListener, ZmqListenerTrait};
+use std::fs;
 use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
+use toml::Value;
 use tracing::error;
 use tracing::info;
 
@@ -41,6 +43,144 @@ const GBT_POLL_INTERVAL: u64 = 10; // seconds
 
 /// Maximum number of pending shares from all clients connected to stratum server
 const STRATUM_SHARES_BUFFER_SIZE: usize = 1000;
+
+/// Prefix bytes for the signature standard: TAG (0x54 0x41 0x47)
+const COINBASE_TAG_MAGIC_BYTES: &[u8] = &[0x54, 0x41, 0x47];
+
+/// Field prefix bytes for [coinbase_tag] section fields
+const FIELD_PREFIX_POOL: u8 = 0x01;
+const FIELD_PREFIX_MINER: u8 = 0x02;
+const FIELD_PREFIX_SOFTWARE: u8 = 0x03;
+const FIELD_PREFIX_WEBSITE: u8 = 0x04;
+const FIELD_PREFIX_CUSTOM: u8 = 0xFF;
+
+/// Coinbase tag configuration fields from [coinbase_tag] section
+#[derive(Debug, Default)]
+struct CoinbaseTagConfig {
+    pool: Option<String>,
+    miner: Option<String>,
+    software: Option<String>,
+    website: Option<String>,
+    custom: Option<String>,
+}
+
+/// Parse the [coinbase_tag] section from a TOML config file
+fn parse_coinbase_tag_config(config_path: &str) -> Result<CoinbaseTagConfig, String> {
+    let contents = fs::read_to_string(config_path)
+        .map_err(|e| format!("Failed to read config file: {e}"))?;
+    
+    let value: Value = contents.parse()
+        .map_err(|e| format!("Failed to parse TOML: {e}"))?;
+    
+    let mut coinbase_tag_config = CoinbaseTagConfig::default();
+    
+    if let Some(coinbase_tag_table) = value.get("coinbase_tag").and_then(|v| v.as_table()) {
+        coinbase_tag_config.pool = coinbase_tag_table.get("pool")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        
+        coinbase_tag_config.miner = coinbase_tag_table.get("miner")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        
+        coinbase_tag_config.software = coinbase_tag_table.get("software")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        
+        coinbase_tag_config.website = coinbase_tag_table.get("website")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        
+        coinbase_tag_config.custom = coinbase_tag_table.get("custom")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+    }
+    
+    Ok(coinbase_tag_config)
+}
+
+/// Compose the signature according to the standard:
+/// [TAG][[TLV_entry1]|[TLV_entry2]|[TLV_entry3]|...]
+/// where TLV_entry is [type][len][value]
+/// type is a single byte prefix for the field
+/// len is the length of the value
+/// value is the value of the field
+/// 
+/// Example:
+/// [TAG][[0x01][0x07][testpool]|[0x02][0x06][miner1]|[0x03][0x08][hydrapool]|[0x04][0x011][hydrapool.org]|[0xFF][0x0A][customdata]]
+/// 
+/// Returns empty Vec if no fields are filled
+fn compose_signature(coinbase_tag_config: &CoinbaseTagConfig) -> Vec<u8> {
+    // First, collect all TLV entries
+    let mut tlv_entries = Vec::new();
+    
+    // Add pool entry if present
+    if let Some(ref pool) = coinbase_tag_config.pool {
+        let bytes = pool.as_bytes();
+        if bytes.len() <= 255 {
+            tlv_entries.push(FIELD_PREFIX_POOL);
+            tlv_entries.push(bytes.len() as u8);
+            tlv_entries.extend_from_slice(bytes);
+        }
+    }
+    
+    // Add miner entry if present
+    if let Some(ref miner) = coinbase_tag_config.miner {
+        let bytes = miner.as_bytes();
+        if bytes.len() <= 255 {
+            tlv_entries.push(FIELD_PREFIX_MINER);
+            tlv_entries.push(bytes.len() as u8);
+            tlv_entries.extend_from_slice(bytes);
+        }
+    }
+    
+    // Add software entry if present
+    if let Some(ref software) = coinbase_tag_config.software {
+        let bytes = software.as_bytes();
+        if bytes.len() <= 255 {
+            tlv_entries.push(FIELD_PREFIX_SOFTWARE);
+            tlv_entries.push(bytes.len() as u8);
+            tlv_entries.extend_from_slice(bytes);
+        }
+    }
+    
+    // Add website entry if present
+    if let Some(ref website) = coinbase_tag_config.website {
+        let bytes = website.as_bytes();
+        if bytes.len() <= 255 {
+            tlv_entries.push(FIELD_PREFIX_WEBSITE);
+            tlv_entries.push(bytes.len() as u8);
+            tlv_entries.extend_from_slice(bytes);
+        }
+    }
+    
+    // Add custom entry if present
+    if let Some(ref custom) = coinbase_tag_config.custom {
+        let bytes = custom.as_bytes();
+        if bytes.len() <= 255 {
+            tlv_entries.push(FIELD_PREFIX_CUSTOM);
+            tlv_entries.push(bytes.len() as u8);
+            tlv_entries.extend_from_slice(bytes);
+        }
+    }
+    
+    // If no TLV entries, return empty signature
+    if tlv_entries.is_empty() {
+        return Vec::new();
+    }
+    
+    // Build the final signature: [TAG][TLV entries...]
+    let mut signature = Vec::new();
+    signature.extend_from_slice(COINBASE_TAG_MAGIC_BYTES);
+    signature.extend_from_slice(&tlv_entries);
+    
+    signature
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -64,16 +204,20 @@ async fn main() -> Result<(), String> {
     }
 
     let mut config = config.unwrap();
-    // Signature standard: [ 0x54 0x41 0x47 ][ 0x01 ][ len(signature) ][ signature ]
-    if let Some(ref original_sig) = config.stratum.pool_signature {
-        let original_bytes = original_sig.as_bytes();
-        let sig_len = original_bytes.len();
-        if sig_len > 0 {
-            let mut new_signature = vec![0x54, 0x41, 0x47, 0x01, sig_len as u8];
-            new_signature.extend_from_slice(original_bytes);
-            // Convert bytes to String (using from_utf8_lossy to handle any non-UTF8 bytes)
-            config.stratum.pool_signature = Some(String::from_utf8_lossy(&new_signature).to_string());
+    
+    // Parse [coinbase_tag] section and compose signature
+    let coinbase_tag_config = match parse_coinbase_tag_config(&args.config) {
+        Ok(config) => config,
+        Err(e) => {
+            error!("Failed to parse coinbase_tag config: {e}");
+            return Err(format!("Failed to parse coinbase_tag config: {e}"));
         }
+    };
+    
+    let signature_bytes = compose_signature(&coinbase_tag_config);
+    if !signature_bytes.is_empty() {
+        // Convert bytes to String (using from_utf8_lossy to handle any non-UTF8 bytes)
+        config.stratum.pool_signature = Some(String::from_utf8_lossy(&signature_bytes).to_string());
     }
 
     // Configure logging based on config
@@ -251,4 +395,177 @@ async fn main() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compose_signature_empty() {
+        let coinbase_tag_config = CoinbaseTagConfig::default();
+        let signature = compose_signature(&coinbase_tag_config);
+        // Should be empty when no fields are filled
+        assert_eq!(signature, Vec::<u8>::new());
+    }
+
+    #[test]
+    fn test_compose_signature_pool_only() {
+        let mut coinbase_tag_config = CoinbaseTagConfig::default();
+        coinbase_tag_config.pool = Some("testpool".to_string());
+        let signature = compose_signature(&coinbase_tag_config);
+        
+        // Expected: [TAG][0x01][len(8)][testpool]
+        // "testpool" is 8 bytes
+        let expected = vec![
+            0x54, 0x41, 0x47, // TAG
+            0x01, // pool prefix (Type)
+            0x08, // length (Length) - "testpool" is 8 bytes
+            b't', b'e', b's', b't', b'p', b'o', b'o', b'l', // "testpool" (Value)
+        ];
+        assert_eq!(signature, expected);
+    }
+
+    #[test]
+    fn test_compose_signature_all_fields() {
+        let coinbase_tag_config = CoinbaseTagConfig {
+            pool: Some("mypool".to_string()),
+            miner: Some("miner1".to_string()),
+            software: Some("hydrapool".to_string()),
+            website: Some("hydrapool.org".to_string()),
+            custom: Some("customdata".to_string()),
+        };
+        let signature = compose_signature(&coinbase_tag_config);
+        
+        // Verify TAG is at the start
+        assert_eq!(signature[0..3], [0x54, 0x41, 0x47]);
+        
+        // Verify all field prefixes are present
+        assert!(signature.contains(&FIELD_PREFIX_POOL));
+        assert!(signature.contains(&FIELD_PREFIX_MINER));
+        assert!(signature.contains(&FIELD_PREFIX_SOFTWARE));
+        assert!(signature.contains(&FIELD_PREFIX_WEBSITE));
+        assert!(signature.contains(&FIELD_PREFIX_CUSTOM));
+        
+        // Verify structure: [TAG][0x01][6][mypool][0x02][6][miner1][0x03][8][hydrapool][0x04][11][hydrapool.org][0xFF][10][customdata]
+        assert_eq!(signature[0..3], [0x54, 0x41, 0x47]); // TAG
+        
+        let mut pos = 3; // After TAG
+        
+        // Check pool field
+        assert_eq!(signature[pos], FIELD_PREFIX_POOL);
+        pos += 1;
+        assert_eq!(signature[pos], 6);
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 6], b"mypool");
+        pos += 6;
+        
+        // Check miner field
+        assert_eq!(signature[pos], FIELD_PREFIX_MINER);
+        pos += 1;
+        assert_eq!(signature[pos], 6);
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 6], b"miner1");
+        pos += 6;
+        
+        // Check software field
+        assert_eq!(signature[pos], FIELD_PREFIX_SOFTWARE);
+        pos += 1;
+        assert_eq!(signature[pos], 9); // "hydrapool" is 9 bytes
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 9], b"hydrapool");
+        pos += 9;
+        
+        // Check website field
+        assert_eq!(signature[pos], FIELD_PREFIX_WEBSITE);
+        pos += 1;
+        assert_eq!(signature[pos], 13); // "hydrapool.org" is 13 bytes
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 13], b"hydrapool.org");
+        pos += 13;
+        
+        // Check custom field
+        assert_eq!(signature[pos], FIELD_PREFIX_CUSTOM);
+        pos += 1;
+        assert_eq!(signature[pos], 10);
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 10], b"customdata");
+    }
+
+    #[test]
+    fn test_compose_signature_partial_fields() {
+        let coinbase_tag_config = CoinbaseTagConfig {
+            pool: Some("pool".to_string()),
+            miner: None,
+            software: Some("software".to_string()),
+            website: None,
+            custom: None,
+        };
+        let signature = compose_signature(&coinbase_tag_config);
+        
+        // Should contain TAG + pool + software
+        assert_eq!(signature[0..3], [0x54, 0x41, 0x47]);
+        
+        // Check that pool and software fields are present by verifying TLV structure
+        let mut pos = 3; // After TAG
+        
+        // Check pool field exists
+        assert_eq!(signature[pos], FIELD_PREFIX_POOL);
+        pos += 1;
+        assert_eq!(signature[pos], 4); // length of "pool"
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 4], b"pool");
+        pos += 4;
+        
+        // Check software field exists
+        assert_eq!(signature[pos], FIELD_PREFIX_SOFTWARE);
+        pos += 1;
+        assert_eq!(signature[pos], 8); // length of "software"
+        pos += 1;
+        assert_eq!(&signature[pos..pos + 8], b"software");
+        
+        // Verify other fields are NOT present by checking the signature doesn't contain their type bytes
+        // Note: We can't use contains() because length bytes might match type bytes
+        // Instead, verify the signature only has the expected fields
+        let mut i = 3;
+        while i < signature.len() {
+            let field_type = signature[i];
+            assert!(field_type == FIELD_PREFIX_POOL || field_type == FIELD_PREFIX_SOFTWARE,
+                "Unexpected field type: 0x{:02x}", field_type);
+            i += 1; // skip type
+            let len = signature[i] as usize;
+            i += 1 + len; // skip length and value
+        }
+    }
+
+    #[test]
+    fn test_compose_signature_long_field() {
+        let mut coinbase_tag_config = CoinbaseTagConfig::default();
+        // Create a field longer than 255 bytes
+        let long_value = "a".repeat(300);
+        coinbase_tag_config.pool = Some(long_value);
+        let signature = compose_signature(&coinbase_tag_config);
+        
+        // Should be empty since the only field is too long and gets skipped
+        assert_eq!(signature, Vec::<u8>::new());
+    }
+    
+    #[test]
+    fn test_compose_signature_long_field_with_valid_field() {
+        let mut coinbase_tag_config = CoinbaseTagConfig::default();
+        // Create a field longer than 255 bytes
+        let long_value = "a".repeat(300);
+        coinbase_tag_config.pool = Some(long_value);
+        // Add a valid field
+        coinbase_tag_config.miner = Some("valid".to_string());
+        let signature = compose_signature(&coinbase_tag_config);
+        
+        // Should contain TAG + valid miner field, pool field should be skipped
+        assert_eq!(signature[0..3], [0x54, 0x41, 0x47]);
+        assert_eq!(signature[3], FIELD_PREFIX_MINER);
+        assert_eq!(signature[4], 5); // length of "valid"
+        assert_eq!(&signature[5..10], b"valid");
+        // Should not contain pool prefix since it was skipped
+        assert!(!signature.contains(&FIELD_PREFIX_POOL));
+    }
 }

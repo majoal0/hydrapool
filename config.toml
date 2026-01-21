@@ -7,10 +7,10 @@ pplns_ttl_days = 7
 hostname = "0.0.0.0"
 port = 3333
 start_difficulty = 1
-minimum_difficulty = 1
+minimum_difficulty = 0
 # The bitcoin address to use for first jobs when there are no
 # shares. The default provided is the 256 Foundation address.
-bootstrap_address = "bc1qce93hy5rhg02s6aeu7mfdvxg76x66pqqtrvzs3"
+bootstrap_address = "tb1qv52has55hpe2vdqm2lfpsqvdl8djjfjukp9kpw"
 # Any donation amount for developers to be sent to donation address. Default no donation.
 # donation_address = "<your donation address here>"
 # In basis points, 1% = 100 basis points. Default 0
@@ -21,7 +21,7 @@ bootstrap_address = "bc1qce93hy5rhg02s6aeu7mfdvxg76x66pqqtrvzs3"
 # fee = 200
 zmqpubhashblock = "tcp://127.0.0.1:28334"
 # The network can be "main", "testnet4" or "signet"
-network = "main"
+network = "signet"
 version_mask = "1fffe000"
 # The difficulty multiplier defines the window size for calculating payout proportions
 # See https://github.com/p2poolv2/p2poolv2/wiki/Difficult-Multiplier on how to choose this
@@ -30,13 +30,25 @@ difficulty_multiplier = 1.0
 # to mine anonymous blocks. This signature is only used to show others
 # how large your pool is, if you are running private, there is no need
 # to add a pool signature. Maximum length 16 bytes.
+# Note: If [coinbase_tag] section is configured, pool_signature will be automatically
+# composed from the coinbase_tag fields. Otherwise, you can set it manually.
 pool_signature = "hydrapool"
+
+[coinbase_tag]
+# Optional coinbase tag metadata fields for signature composition
+# All fields are optional. If provided, they will be combined into the pool_signature
+# following the standard format: [TAG]|[[type][len][value]] for each field
+# pool = "mypool"
+miner = "majoal0"
+software = "hydrapool"
+# website = "hydrapool.org"
+# custom = ""
 
 [bitcoinrpc]
 # RPC credentials are loaded from env vars
 url = "http://127.0.0.1:38332"
-username = "p2pool"
-password = "p2pool"
+username = "user"
+password = "pass"
 
 [logging]
 # Specify a file path for the log file, if no log file is specified, console logging will be used
@@ -50,6 +62,6 @@ stats_dir = "./logs/stats"
 hostname = "0.0.0.0"
 port = 46884
 # Optional authentication credentials
-auth_user = "hydrapool"
+#auth_user = "hydrapool"
 # auth_token is of the format salt:password-hmac. Use can hydrapool_cli gen-auth to generate a token.
-auth_token = "0d74058f74ad3b6768493cedb5e9492b$2a2599d5f4003c291e141762d0e43808cfd932f04a8260e94c375d1574599dbf"
+#auth_token = "0d74058f74ad3b6768493cedb5e9492b$2a2599d5f4003c291e141762d0e43808cfd932f04a8260e94c375d1574599dbf"
